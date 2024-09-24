@@ -13,8 +13,9 @@ use OCA\Encryption\Controller\RecoveryController;
 use OCA\Encryption\Controller\SettingsController;
 use OCA\Encryption\Crypto\Crypt;
 use OCA\Encryption\Crypto\Encryption;
-use OCA\Encryption\Hooks\UserHooks;
 use OCA\Encryption\KeyManager;
+use OCA\Encryption\Listeners\UserEventsListener;
+use OCA\Encryption\Services\PassphraseService;
 use OCA\Encryption\Session;
 use OCP\HintException;
 
@@ -152,14 +153,15 @@ class ExceptionSerializer {
 		\OCA\Encryption\Users\Setup::class => [
 			'setupUser',
 		],
-		UserHooks::class => [
-			'login',
-			'postCreateUser',
-			'postDeleteUser',
-			'prePasswordReset',
-			'postPasswordReset',
-			'preSetPassphrase',
-			'setPassphrase',
+		UserEventsListener::class => [
+			'onUserCreated',
+			'onUserLogin',
+			'onBeforePasswordUpdated',
+			'onPasswordUpdated',
+			'onPasswordReset',
+		],
+		PassphraseService::class => [
+			'setPassphraseForUser',
 		],
 	];
 
