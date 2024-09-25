@@ -76,54 +76,56 @@ class RefreshWebcalService {
 				$compName = null;
 				$uid = null;
 
-				foreach ($vObject->getComponents() as $component) {
-					if ($component->name === 'VTIMEZONE') {
+				// skip invalid calendar objects
+				try {
+
+					foreach ($vObject->getComponents() as $component) {
+						if ($component->name === 'VTIMEZONE') {
+							continue;
+						}
+
+						$compName = $component->name;
+
+						if ($stripAlarms) {
+							unset($component->{'VALARM'});
+						}
+						if ($stripAttachments) {
+							unset($component->{'ATTACH'});
+						}
+
+						$uid = $component->{ 'UID' }->getValue();
+					}
+
+					if ($stripTodos && $compName === 'VTODO') {
 						continue;
 					}
 
-					$compName = $component->name;
-
-					if ($stripAlarms) {
-						unset($component->{'VALARM'});
-					}
-					if ($stripAttachments) {
-						unset($component->{'ATTACH'});
+					if (!isset($uid)) {
+						continue;
 					}
 
-					$uid = $component->{ 'UID' }->getValue();
-				}
+					$denormalized = $this->calDavBackend->getDenormalizedData($vObject->serialize());
+					// Find all identical sets and remove them from the update
+					if (isset($localData[$uid]) && $denormalized['etag'] === $localData[$uid]['etag']) {
+						unset($localData[$uid]);
+						continue;
+					}
 
-				if ($stripTodos && $compName === 'VTODO') {
-					continue;
-				}
+					$vObjectCopy = clone $vObject;
+					$identical = isset($localData[$uid]) && $this->compareWithoutDtstamp($vObjectCopy, $localData[$uid]);
+					if ($identical) {
+						unset($localData[$uid]);
+						continue;
+					}
 
-				if (!isset($uid)) {
-					continue;
-				}
+					// Find all modified sets and update them
+					if (isset($localData[$uid]) && $denormalized['etag'] !== $localData[$uid]['etag']) {
+						$this->calDavBackend->updateCalendarObject($subscription['id'], $localData[$uid]['uri'], $vObject->serialize(), CalDavBackend::CALENDAR_TYPE_SUBSCRIPTION);
+						unset($localData[$uid]);
+						continue;
+					}
 
-				$denormalized = $this->calDavBackend->getDenormalizedData($vObject->serialize());
-				// Find all identical sets and remove them from the update
-				if (isset($localData[$uid]) && $denormalized['etag'] === $localData[$uid]['etag']) {
-					unset($localData[$uid]);
-					continue;
-				}
-
-				$vObjectCopy = clone $vObject;
-				$identical = isset($localData[$uid]) && $this->compareWithoutDtstamp($vObjectCopy, $localData[$uid]);
-				if ($identical) {
-					unset($localData[$uid]);
-					continue;
-				}
-
-				// Find all modified sets and update them
-				if (isset($localData[$uid]) && $denormalized['etag'] !== $localData[$uid]['etag']) {
-					$this->calDavBackend->updateCalendarObject($subscription['id'], $localData[$uid]['uri'], $vObject->serialize(), CalDavBackend::CALENDAR_TYPE_SUBSCRIPTION);
-					unset($localData[$uid]);
-					continue;
-				}
-
-				// Only entirely new events get created here
-				try {
+					// Only entirely new events get created here
 					$objectUri = $this->getRandomCalendarObjectUri();
 					$this->calDavBackend->createCalendarObject($subscription['id'], $objectUri, $vObject->serialize(), CalDavBackend::CALENDAR_TYPE_SUBSCRIPTION);
 				} catch (NoInstancesException|BadRequest $ex) {
